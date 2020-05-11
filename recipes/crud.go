@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gocql/gocql"
 	"github.com/kristoiv/gocqltable"
 
 	r "github.com/kristoiv/gocqltable/reflect"
@@ -26,6 +27,7 @@ type RangeInterface interface {
 	Select(s []string) RangeInterface
 	WhereIn(m map[string][]interface{}) RangeInterface
 	Fetch() (interface{}, error)
+	Consistency(gocql.Consistency) RangeInterface
 }
 
 // CRUD forms the basis for table peer classes implementing the logic for row-based operations.
@@ -238,6 +240,8 @@ type Range struct {
 	order      string
 	limit      *int
 	filtering  bool
+
+	consistency *gocql.Consistency
 }
 
 func (r Range) LessThan(rangeKey string, value interface{}) RangeInterface {
@@ -321,6 +325,11 @@ func (r Range) WhereIn(m map[string][]interface{}) RangeInterface {
 	return r
 }
 
+func (r Range) Consistency(c gocql.Consistency) RangeInterface {
+	r.consistency = &c
+	return r
+}
+
 func (r Range) Fetch() (interface{}, error) {
 	where := r.where
 	whereVals := r.whereVals
@@ -354,7 +363,11 @@ func (r Range) Fetch() (interface{}, error) {
 		selectString = strings.Join(selectCols, ", ")
 	}
 	query := fmt.Sprintf(`SELECT %s FROM %q.%q %s %s %s %s`, selectString, r.table.Keyspace().Name(), r.table.Name(), whereString, orderString, limitString, filteringString)
-	iter := r.table.Query(query, whereVals...).Fetch()
+	q := r.table.Query(query, whereVals...)
+	if r.consistency != nil {
+		q = q.Consistency(r.consistency)
+	}
+	iter := q.Fetch()
 
 	result := reflect.Zero(reflect.SliceOf(reflect.PtrTo(reflect.TypeOf(r.table.Row())))) // Create a zero-value slice of pointers to our model type
 	for row := range iter.Range() {

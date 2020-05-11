@@ -15,6 +15,13 @@ type Query struct {
 
 	Table   Table
 	Session *gocql.Session
+
+	consistency *gocql.Consistency
+}
+
+func (q Query) Consistency(c *gocql.Consistency) Query {
+	q.consistency = c
+	return q
 }
 
 func (q Query) FetchRow() (interface{}, error) {
@@ -30,7 +37,12 @@ func (q Query) FetchRow() (interface{}, error) {
 }
 
 func (q Query) Fetch() *Iterator {
-	iter := q.Session.Query(q.Statement, q.Values...).Iter()
+	query := q.Session.Query(q.Statement, q.Values...)
+	if q.consistency != nil {
+		query = query.Consistency(*q.consistency)
+	}
+
+	iter := query.Iter()
 	return &Iterator{
 		iter: iter,
 		row:  q.Table.Row(),
@@ -38,7 +50,12 @@ func (q Query) Fetch() *Iterator {
 }
 
 func (q Query) Exec() error {
-	return q.Session.Query(q.Statement, q.Values...).Exec()
+	query := q.Session.Query(q.Statement, q.Values...)
+	if q.consistency != nil {
+		query = query.Consistency(*q.consistency)
+	}
+
+	return query.Exec()
 }
 
 type Iterator struct {
